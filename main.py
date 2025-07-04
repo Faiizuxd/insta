@@ -4,124 +4,93 @@ import time
 from instagrapi import Client
 
 app = Flask(__name__)
-app.debug = True
+cl = Client()
+logged_in = False
 
-html_code = '''
+HTML = '''
 <!DOCTYPE html>
-<html lang="en">
+<html>
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
-  <title>FAIZU INSTAGRAM BOT</title>
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <title>FAIZU InstaBot</title>
   <style>
-    body {
-      background: linear-gradient(to right, #0f2027, #203a43, #2c5364);
-      font-family: 'Segoe UI', sans-serif;
-      color: white;
-    }
-    .box {
-      max-width: 600px;
-      margin: 80px auto;
-      background: rgba(0, 0, 0, 0.8);
-      border-radius: 20px;
-      padding: 30px;
-      box-shadow: 0 0 20px #00ffaa;
-    }
-    h2 {
-      text-align: center;
-      margin-bottom: 30px;
-      color: #00ffaa;
-    }
-    label {
-      font-weight: bold;
-    }
-    .form-control {
-      background: #111;
-      color: white;
-      border: 1px solid #00ffaa;
-    }
-    .btn-submit {
-      background: #00ffaa;
-      border: none;
-      color: black;
-      font-weight: bold;
-      width: 100%;
-      margin-top: 15px;
-    }
+    body { background-color: #000; color: #00ffaa; font-family: Arial; text-align: center; padding-top: 30px; }
+    input, button, textarea { padding: 10px; margin: 10px; border-radius: 10px; border: none; width: 80%; max-width: 400px; }
+    button { background-color: #00ffaa; color: #000; font-weight: bold; cursor: pointer; }
+    .thread-box { background: #111; margin: 10px auto; padding: 10px; border-radius: 10px; max-width: 600px; }
   </style>
 </head>
 <body>
-  <div class="box">
-    <h2>FAIZU | Instagram GC Spammer</h2>
-    <form action="/" method="post" enctype="multipart/form-data">
-      <div class="mb-3">
-        <label>Instagram Username:</label>
-        <input type="text" class="form-control" name="username" required />
+  <h1>🟢 FAIZU INSTAGRAM BOT</h1>
+
+  {% if not logged_in %}
+  <form method="POST">
+    <input type="text" name="username" placeholder="Instagram Username" required><br>
+    <input type="password" name="password" placeholder="Instagram Password" required><br>
+    <button type="submit">Login</button>
+  </form>
+  {% else %}
+    <h3>✅ Logged in</h3>
+    <h2>👇 Available Group Threads:</h2>
+    {% for t in threads %}
+      <div class="thread-box">
+        <strong>Title:</strong> {{ t.title }}<br>
+        <strong>ID:</strong> {{ t.id }}
       </div>
-      <div class="mb-3">
-        <label>Instagram Password:</label>
-        <input type="password" class="form-control" name="password" required />
-      </div>
-      <div class="mb-3">
-        <label>Group Thread ID:</label>
-        <input type="text" class="form-control" name="threadId" required />
-      </div>
-      <div class="mb-3">
-        <label>Prefix Name (e.g., FAIZU):</label>
-        <input type="text" class="form-control" name="prefix" required />
-      </div>
-      <div class="mb-3">
-        <label>Select Message List (.txt):</label>
-        <input type="file" class="form-control" name="txtFile" accept=".txt" required />
-      </div>
-      <div class="mb-3">
-        <label>Delay Between Messages (seconds):</label>
-        <input type="number" class="form-control" name="delay" min="1" required />
-      </div>
-      <button type="submit" class="btn btn-submit">Start Bot</button>
+    {% endfor %}
+
+    <form method="POST" enctype="multipart/form-data" action="/send">
+      <input type="text" name="thread_id" placeholder="Enter Thread ID" required><br>
+      <input type="text" name="prefix" placeholder="Prefix (e.g. FAIZU):" required><br>
+      <input type="number" name="delay" placeholder="Delay between messages" required><br>
+      <input type="file" name="txtFile" accept=".txt" required><br>
+      <button type="submit">Start Bot</button>
     </form>
-  </div>
+  {% endif %}
 </body>
 </html>
 '''
 
-def message_sender(username, password, thread_id, prefix, delay, messages):
-    cl = Client()
-    try:
-        cl.login(username, password)
-        print("Logged in successfully.")
+@app.route('/', methods=['GET', 'POST'])
+def home():
+    global logged_in, cl
 
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        try:
+            cl.login(username, password)
+            logged_in = True
+        except Exception as e:
+            return f"<h3>❌ Login failed: {e}</h3>"
+
+    if logged_in:
+        threads = cl.direct_threads()
+        return render_template_string(HTML, logged_in=True, threads=threads)
+
+    return render_template_string(HTML, logged_in=False)
+
+@app.route('/send', methods=['POST'])
+def send_msg():
+    thread_id = request.form['thread_id']
+    prefix = request.form['prefix']
+    delay = int(request.form['delay'])
+    messages = request.files['txtFile'].read().decode().splitlines()
+
+    def spammer():
         while True:
             for msg in messages:
                 try:
-                    full_message = f"{prefix} {msg}"
-                    cl.direct_send(full_message, thread_ids=[thread_id])
-                    print(f"Sent: {full_message}")
+                    final_msg = f"{prefix} {msg}"
+                    cl.direct_send(final_msg, thread_ids=[thread_id])
+                    print(f"✅ Sent: {final_msg}")
                     time.sleep(delay)
                 except Exception as e:
-                    print(f"Send error: {e}")
-                    time.sleep(60)
-    except Exception as login_error:
-        print(f"Login Failed: {login_error}")
+                    print(f"❌ Error: {e}")
+                    time.sleep(30)
 
-@app.route('/', methods=['GET', 'POST'])
-def index():
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        thread_id = request.form.get('threadId')
-        prefix = request.form.get('prefix')
-        delay = int(request.form.get('delay'))
-        messages = request.files['txtFile'].read().decode().splitlines()
+    threading.Thread(target=spammer, daemon=True).start()
 
-        thread = threading.Thread(target=message_sender, args=(username, password, thread_id, prefix, delay, messages))
-        thread.daemon = True
-        thread.start()
-
-        return '<h3 style="color:lime; text-align:center; margin-top:30px;">Insta bot started! Leave this tab open.</h3>'
-
-    return render_template_string(html_code)
+    return "<h2>✅ Bot Started — Leave this tab open!</h2>"
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host="0.0.0.0", port=5000)
