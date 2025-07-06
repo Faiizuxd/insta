@@ -1,115 +1,70 @@
 from flask import Flask, request, render_template_string
-import threading, time, os
+import threading
+import time
 from instagrapi import Client
 
-app = Flask(__name__)
-cl = Client()
-SESSION_FILE = "faizu_session.json"
-logged_in = False
-
-def init_client():
-    global cl
-    cl = Client()
-    cl.set_locale('en_US')
-    cl.set_device("random")  # Avoid detection
-    if os.path.exists(SESSION_FILE):
-        try:
-            cl.load_settings(SESSION_FILE)
-            cl.login(cl.username, cl.password)
-            return True
-        except Exception as e:
-            print(f"[Session Load Failed] {e}")
-    return False
+app = Flask(name)
 
 HTML = '''
-<!DOCTYPE html>
-<html>
-<head>
-  <title>FAIZU InstaBot</title>
-  <style>
-    body { background-color: #000; color: #00ffaa; font-family: Arial; text-align: center; padding-top: 30px; }
-    input, button, textarea { padding: 10px; margin: 10px; border-radius: 10px; border: none; width: 80%; max-width: 400px; }
-    button { background-color: #00ffaa; color: #000; font-weight: bold; cursor: pointer; }
-    .thread-box { background: #111; margin: 10px auto; padding: 10px; border-radius: 10px; max-width: 600px; }
-  </style>
-</head>
-<body>
-  <h1>🟢 FAIZU INSTAGRAM BOT</h1>
 
-  {% if not logged_in %}
-  <form method="POST">
-    <input type="text" name="username" placeholder="Instagram Username" required><br>
-    <input type="password" name="password" placeholder="Instagram Password" required><br>
-    <button type="submit">Login</button>
-  </form>
-  {% else %}
-    <h3>✅ Logged in</h3>
-    <h2>👇 Available Group Threads:</h2>
-    {% for t in threads %}
-      <div class="thread-box">
-        <strong>Title:</strong> {{ t.title }}<br>
-        <strong>ID:</strong> {{ t.id }}
-      </div>
-    {% endfor %}
+<!DOCTYPE html>  <html>  
+<head>  
+  <title>FAIZU InstaBot</title>  
+  <style>  
+    body { background-color: #111; color: #00ffaa; font-family: Arial; text-align: center; padding-top: 60px; }  
+    input, button { padding: 10px; margin: 10px; border-radius: 10px; border: none; }  
+    button { background-color: #00ffaa; color: #000; font-weight: bold; }  
+  </style>  
+</head>  
+<body>  
+  <h1>FAIZU Instagram Group Bot</h1>  
+  <form method="POST" enctype="multipart/form-data">  
+    <input type="text" name="username" placeholder="Username" required><br>  
+    <input type="password" name="password" placeholder="Password" required><br>  
+    <input type="text" name="thread_id" placeholder="Group Thread ID" required><br>  
+    <input type="text" name="prefix" placeholder="Prefix (e.g. FAIZU)" required><br>  
+    <input type="file" name="txtFile" accept=".txt" required><br>  
+    <input type="number" name="delay" placeholder="Delay (sec)" required><br>  
+    <button type="submit">Start Bot</button>  
+  </form>  
+</body>  
+</html>  
+'''  def spam_messages(username, password, thread_id, prefix, delay, messages):
+cl = Client()
+try:
+cl.login(username, password)
+print("✅ Login successful!")
 
-    <form method="POST" enctype="multipart/form-data" action="/send">
-      <input type="text" name="thread_id" placeholder="Enter Thread ID" required><br>
-      <input type="text" name="prefix" placeholder="Prefix (e.g. FAIZU):" required><br>
-      <input type="number" name="delay" placeholder="Delay between messages" required><br>
-      <input type="file" name="txtFile" accept=".txt" required><br>
-      <button type="submit">Start Bot</button>
-    </form>
-  {% endif %}
-</body>
-</html>
-'''
+while True:  
+        for msg in messages:  
+            try:  
+                full_msg = f"{prefix} {msg}"  
+                cl.direct_send(full_msg, thread_ids=[thread_id])  
+                print(f"[SENT] {full_msg}")  
+                time.sleep(delay)  
+            except Exception as e:  
+                print(f"[ERROR] {e}")  
+                time.sleep(30)  
+except Exception as e:  
+    print(f"[LOGIN ERROR] {e}")
 
 @app.route('/', methods=['GET', 'POST'])
-def home():
-    global logged_in, cl
-    if init_client():
-        logged_in = True
+def index():
+if request.method == 'POST':
+username = request.form['username']
+password = request.form['password']
+thread_id = request.form['thread_id']
+prefix = request.form['prefix']
+delay = int(request.form['delay'])
+messages = request.files['txtFile'].read().decode().splitlines()
 
-    if request.method == 'POST' and not logged_in:
-        username = request.form['username']
-        password = request.form['password']
-        try:
-            cl.login(username, password)
-            cl.dump_settings(SESSION_FILE)  # Save session
-            logged_in = True
-        except Exception as e:
-            return f"<h3>❌ Login failed: {e}</h3>"
+thread = threading.Thread(target=spam_messages, args=(username, password, thread_id, prefix, delay, messages))  
+    thread.daemon = True  
+    thread.start()  
 
-    if logged_in:
-        try:
-            threads = cl.direct_threads()
-        except Exception as e:
-            return f"<h3>❌ Could not fetch threads: {e}</h3>"
-        return render_template_string(HTML, logged_in=True, threads=threads)
+    return "<h2 style='color:lime'>✅ Bot Started — Leave this tab open!</h2>"  
 
-    return render_template_string(HTML, logged_in=False)
+return render_template_string(HTML)
 
-@app.route('/send', methods=['POST'])
-def send_msg():
-    thread_id = request.form['thread_id']
-    prefix = request.form['prefix']
-    delay = int(request.form['delay'])
-    messages = request.files['txtFile'].read().decode().splitlines()
-
-    def spammer():
-        while True:
-            for msg in messages:
-                try:
-                    final_msg = f"{prefix} {msg}"
-                    cl.direct_send(final_msg, thread_ids=[thread_id])
-                    print(f"✅ Sent: {final_msg}")
-                    time.sleep(delay)
-                except Exception as e:
-                    print(f"❌ Error: {e}")
-                    time.sleep(30)
-
-    threading.Thread(target=spammer, daemon=True).start()
-    return "<h2>✅ Bot Started — Leave this tab open!</h2>"
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+if name == 'main':
+app.run(host='0.0.0.0', port=5000)
